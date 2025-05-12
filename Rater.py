@@ -95,7 +95,7 @@ def rate_script():
 
     completion = client.chat.completions.create(
     
-        model="openai/gpt-4o",
+        model="deepseek/deepseek-prover-v2:free",
         
         messages=
         [
@@ -147,5 +147,5 @@ def rate_video(video_path):
     return final_score
 
 if __name__ == "__main__":
-    video_file = "Blank.mp4"  # Replace with your video name
+    video_file = "Lab 10 Demonstration Video.mp4"  # Replace with your video name
     rate_video(video_file)
