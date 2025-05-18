@@ -101,7 +101,7 @@ def rate_script():
         [
           {
             "role": "user",
-            "content": ("Rate how good this video is out of ten based on the transcript of it, before giving your rating saying \\\"My final rating for the video is\\\" Transcript:" + transcript)
+            "content": ("Rate how good this video is out of ten based on the transcript of it, before giving your rating saying \\\"My final rating for the video is\\\" Don't bold the rating only do the number out of ten! Transcript:" + transcript)
             }
         ]
     )
@@ -124,16 +124,17 @@ def rate_script():
 def rate_video(video_path):
     print("Analyzing video clarity...")
     visual_score = average_blurriness(video_path)
-    print(f"Blurriness score: {visual_score:.2f}")
+    norm_visual = min(visual_score / 1000, 1.0)
+    print(f"Blurriness score: {(norm_visual*10):.2f}")
     print("Extracting and analyzing audio...")
     audio_path = extract_audio(video_path)
 
     #audio_score = audio_rms_score(audio_path)
     audio_score = (clear_audio-unclear_audio)/ transcribedCount
-    print(f"Audio RMS score: {audio_score:.5f}")
+    print(f"Audio RMS score: {(audio_score*10):.5f}")
     
     # Normalize scores to 0–1 range for simplicity
-    norm_visual = min(visual_score / 1000, 1.0)
+    
     norm_audio = min(audio_score, 1.0)
     script_score = min(rate_script(), 1.0)
     # Weighted average
