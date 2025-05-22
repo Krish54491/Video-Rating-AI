@@ -128,6 +128,8 @@ def download_transcript():
 
 @app.route("/rate")
 def rate_video(video_path):
+    global transcript, aiComment, unclear_audio, clear_audio, transcribedCount
+
     # print("Analyzing video clarity...")
     visual_score = average_blurriness(video_path)
     norm_visual = min(visual_score / 1000, 1.0)
@@ -149,11 +151,17 @@ def rate_video(video_path):
         os.remove(audio_path)
     if(os.path.exists(video_path)):
         os.remove(video_path)
+    temp_aiComment = aiComment
+    transcript = ""
+    aiComment = ""
+    unclear_audio = 0
+    clear_audio = 0
+    transcribedCount = 0
     return f'''
     <p>Visual Score: {(norm_visual*10):.2f}</p>
     <p>Audio Score: {(audio_score*10):.2f}</p>
     <p>Script Score: {(script_score*10):.2f}</p>
-    <p>AI Comment: {aiComment}</p>
+    <p>AI Comment: {temp_aiComment}</p>
     <p>Final Score: {(final_score*10):.2f}</p>
     '''
 def allowed_file(filename):
@@ -172,31 +180,59 @@ def upload_video():
             file.save(video_path)
             # Call rate_video with the uploaded file path
             result = rate_video(video_path)
-            return f'''
+            return '''
             <!doctype html>
+            <html>
+            <head>
             <title>AI Video Rater</title>
+            <script>
+              // Hide progress message after rating is done
+              window.onload = function() {{
+                document.getElementById('progress').style.display = 'none';
+              }};
+            </script>
+            </head>
+            <body>
             <h1>AI Video Rater</h1>
             <p>If the script score is -1 it means the AI errored out and could not give a rating. Also only works for english videos and videos shorter than 30 minutes</p>
-            <form method=post enctype=multipart/form-data>
+            <form method=post enctype=multipart/form-data onsubmit="document.getElementById('progress').style.display='block';">
               <input type=file name=video accept="video/*" required>
               <input type=submit value=Upload>
             </form>
-            {result}
+            <div id="progress" style="color:blue; font-weight:bold; display:none;">
+              Video Rating in Progress...
+            </div>''' + result + '''
             <p><a href="/download-transcript" download>
                <button type="button">Download Transcript</button>
             </a></p>
+            </body>
+            </html>
             '''
         else:
             return "Invalid file type. Please upload a video file."
     return '''
     <!doctype html>
+    <html>
+    <head>
     <title>AI Video Rater</title>
+    <script>
+      function showProgress() {
+        document.getElementById('progress').style.display = 'block';
+      }
+    </script>
+    </head>
+    <body>
     <h1>AI Video Rater</h1>
     <p>If the script score is -1 it means the AI errored out and could not give a rating. Also only works for english videos and videos shorter than 30 minutes</p>
-    <form method=post enctype=multipart/form-data>
+    <form method=post enctype=multipart/form-data onsubmit="showProgress()">
       <input type=file name=video accept="video/*" required>
       <input type=submit value=Upload>
     </form>
+    <div id="progress" style="color:blue; font-weight:bold; display:none;">
+      Video Rating in Progress...
+    </div>
+    </body>
+    </html>
     '''
 
 #if __name__ == "__main__":
