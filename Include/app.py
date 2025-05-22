@@ -1,13 +1,10 @@
 import cv2
-import librosa
 import moviepy as mp
 import numpy as np
 import os
 import speech_recognition as sr
-import textstat
 import re
 from openai import OpenAI
-import sys
 import os
 from flask import Flask, request, redirect, url_for, render_template_string, send_file
 
