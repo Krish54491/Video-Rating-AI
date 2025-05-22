@@ -14,7 +14,7 @@ pip install flask
 then in your terminal type
 ```
 cd Include
-flask run --debug
+flask --app rater.py --debug run
 ```
 Boom you can rate all the videos you want much easier
 I would make this a offical website, but python and github pages are not compatible :(
