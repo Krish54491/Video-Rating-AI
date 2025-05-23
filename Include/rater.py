@@ -5,7 +5,6 @@ import os
 import speech_recognition as sr
 import re
 from openai import OpenAI
-import os
 from flask import Flask, request, redirect, url_for, render_template_string, send_file
 
 app = Flask(__name__)
