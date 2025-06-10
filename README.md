@@ -2,10 +2,10 @@
 ## Setup
 Download the git files (yes all of them), and install all the imports in app.py using pip like so:
 ```
-pip install cv2
+pip install opencv-python
 pip install numpy
-pip install os
-pip install speech_recognition
+pip install moviepy
+pip install SpeechRecognition
 pip install re
 pip install OpenAI
 pip install os
