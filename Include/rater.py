@@ -83,7 +83,7 @@ def extract_audio(video_path, audio_path="temp_audio.wav"):
 
 def rate_script():
     if(not transcript):
-       return 0.0
+       return -1
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key="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", #feel free to use this key, it has a dollar limit on it doesn't matter if you use it
