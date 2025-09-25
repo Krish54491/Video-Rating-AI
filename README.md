@@ -6,9 +6,7 @@ pip install opencv-python
 pip install numpy
 pip install moviepy
 pip install SpeechRecognition
-pip install re
-pip install OpenAI
-pip install os
+pip install Openai
 pip install flask
 ```
 then in your terminal type
