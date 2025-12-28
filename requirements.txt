@@ -1,0 +1,6 @@
+flask
+opencv-python
+moviepy
+numpy
+SpeechRecognition
+openai
