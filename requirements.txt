@@ -4,3 +4,4 @@ moviepy
 numpy
 SpeechRecognition
 openai
+flask-cors
