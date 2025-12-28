@@ -17,4 +17,5 @@ flask --app rater.py --debug run
 Boom you can rate all the videos you want much easier!
 <br />
 Finally I would make this a offical website, but python and github pages are not compatible :(
-Edit: tragically pythonanywhere was not compatible with moviepy 
+Edit 1: tragically pythonanywhere was not compatible with moviepy 
+Edit 2: I'm working on it to be on my website krish544.com using render!
