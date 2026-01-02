@@ -7,6 +7,7 @@ import re
 from openai import OpenAI
 from flask import Flask, request, redirect, url_for, render_template_string, send_file, jsonify
 from flask_cors import CORS
+import shutil
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": [
@@ -174,6 +175,17 @@ def allowed_file(filename):
 @app.route("/", methods=["GET", "POST"])
 def upload_video():
     if request.method == "POST":
+        # Clear the uploads folder before saving the new file
+        for filename in os.listdir(UPLOAD_FOLDER):
+            file_path = os.path.join(UPLOAD_FOLDER, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}. Reason: {e}")
+
         if 'video' not in request.files:
             return "No file part"
         file = request.files['video']
