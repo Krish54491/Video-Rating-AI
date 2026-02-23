@@ -12,7 +12,8 @@ import shutil
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": [
     "https://krish544.com",
-    "http://localhost:5173"
+    "http://localhost:5173",
+    "http://localhost:8788",
 ]}},
 allow_headers=["Content-Type"],
 methods=["GET", "POST"])
