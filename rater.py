@@ -4,25 +4,27 @@ import numpy as np
 import os
 import speech_recognition as sr
 import re
+import threading
 from openai import OpenAI
 from flask import Flask, request, redirect, url_for, render_template_string, send_file, jsonify
 from flask_cors import CORS
 import shutil
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": [
-    "https://krish544.com",
-    "http://localhost:5173",
-    "http://localhost:8788",
-]}},
-allow_headers=["Content-Type"],
-methods=["GET", "POST"])
+CORS(app,
+     resources={r"/*": {"origins": [
+        "https://krish544.com",
+        "http://localhost:5173",
+        "http://localhost:8788",
+     ]}},
+     allow_headers=["Content-Type", "*"],
+     methods=["GET", "POST", "OPTIONS"],
+     supports_credentials=True)
 openrouter_key= os.getenv("OPENROUTER_API_KEY")
-transcript = ""
-aiComment = ""
-unclear_audio = 0
-clear_audio= 0
-transcribedCount = 0
+
+# Use thread-local storage to prevent concurrent requests from interfering with each other
+request_context = threading.local()
+
 UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'webm'}
 
@@ -56,34 +58,30 @@ def average_blurriness(video_path):
     scores = [blurriness_score(f) for f in frames]
     return np.mean(scores)
 
-def extract_audio(video_path, audio_path="temp_audio.wav"):
-    global transcript
-    global clear_audio
-    global unclear_audio
-    global transcribedCount
+def extract_audio(video_path, audio_path):
     video = mp.VideoFileClip(video_path)
-    video.audio.write_audiofile(audio_path)
+    video.audio.write_audiofile(audio_path, verbose=False, logger=None)
 
     r = sr.Recognizer()
-    with sr.AudioFile("temp_audio.wav") as source:
+    with sr.AudioFile(audio_path) as source:
         totalDuration = int(source.DURATION)
         chunkDuration = 30 # change this to change how long it listens before transcribing (less is recommended) the shorter it is the longer the rating will take
         # print(f"Audio duration: {totalDuration:.2f} sec")
         for i in range(0, totalDuration, chunkDuration):
             # print(f"Transcribing chunk {i}–{i+chunkDuration} seconds...")
-            transcribedCount += 1
+            request_context.transcribedCount += 1
             try:
                 audio = r.record(source,duration=chunkDuration)
                 text = r.recognize_google(audio)
                 if(len(text) > 10):
-                    clear_audio+=1
-                transcript += text + "\n "
+                    request_context.clear_audio+=1
+                request_context.transcript += text + "\n "
                 #print("Transcription: " + text)s
                 with open("transcription.txt", "w") as f:
-                    f.write(transcript)
+                    f.write(request_context.transcript)
             except sr.UnknownValueError:
                 # print("Could not understand audio")
-                unclear_audio+= 1
+                request_context.unclear_audio+= 1
             except sr.RequestError as e:
                 print("Could not request results from Google Speech Recognition service; {0}".format(e))
         video.audio.close()
@@ -92,37 +90,44 @@ def extract_audio(video_path, audio_path="temp_audio.wav"):
 
 
 def rate_script():
-    if(not transcript):
+    if(not request_context.transcript):
        return -1
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=openrouter_key,
-    )
-    completion = client.chat.completions.create(
-        model="openai/gpt-oss-120b:free",
-        messages=
-        [
-          {
-            "role": "user",
-            "content": ("Rate how good this video is out of ten based on the transcript of it, before giving your rating say exactly as follows \\\"My final rating for the video is\\\" You must say that before giving your number rating! Under no circumstances should you add asterisks! Transcript:" + transcript)
-            }
-        ]
-    )
-
-    try:
-        global aiComment
-        aiComment = completion.choices[0].message.content
-        print(completion.choices[0].message.content)
-        script_score = float((re.search(r'My final rating for the video is\s+(\d+(?:\.\d+)?)', completion.choices[0].message.content, re.IGNORECASE)).group(1))
-
-    except Exception as e:
-        # print("Error accessing response:", e)
-        # print("Full response:", completion)
-        script_score = -1.0
-
     
-    # print(f"Transcript Script Score: {script_score:.2f}")
-    return script_score*.1
+    if not openrouter_key:
+        print("ERROR: OPENROUTER_API_KEY not set!")
+        return -1
+    
+    try:
+        client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=openrouter_key,
+        )
+        completion = client.chat.completions.create(
+            model="openai/gpt-oss-120b:free",
+            messages=
+            [
+              {
+                "role": "user",
+                "content": ("Rate how good this video is out of ten based on the transcript of it, before giving your rating say exactly as follows \\\"My final rating for the video is\\\" You must say that before giving your number rating! Under no circumstances should you add asterisks! Transcript:" + request_context.transcript)
+                }
+            ]
+        )
+
+        try:
+            request_context.aiComment = completion.choices[0].message.content
+            print(completion.choices[0].message.content)
+            script_score = float((re.search(r'My final rating for the video is\s+(\d+(?:\.\d+)?)', completion.choices[0].message.content, re.IGNORECASE)).group(1))
+
+        except Exception as e:
+            print("Error parsing response:", e)
+            script_score = -1.0
+
+        
+        # print(f"Transcript Script Score: {script_score:.2f}")
+        return script_score*.1
+    except Exception as e:
+        print(f"Error calling OpenRouter API: {str(e)}")
+        return -1
 
 @app.route('/download-transcript')
 def download_transcript():
@@ -134,42 +139,72 @@ def download_transcript():
 
 @app.route("/rate")
 def rate_video(video_path):
-    global transcript, aiComment, unclear_audio, clear_audio, transcribedCount
+    # Initialize thread-local context for this request
+    request_context.transcript = ""
+    request_context.aiComment = ""
+    request_context.unclear_audio = 0
+    request_context.clear_audio = 0
+    request_context.transcribedCount = 0
+    
+    # Use unique audio filename based on video filename to support concurrent requests
+    video_filename = os.path.basename(video_path)
+    audio_path = os.path.join(UPLOAD_FOLDER, f"audio_{video_filename}.wav")
+    
+    try:
+        # print("Analyzing video clarity...")
+        visual_score = average_blurriness(video_path)
+        norm_visual = min(max(visual_score / 1000, 0), 1.0)
+        # print(f"Blurriness score: {(norm_visual*10):.2f}")
+        # print("Extracting and analyzing audio...")
+        extract_audio(video_path, audio_path)
 
-    # print("Analyzing video clarity...")
-    visual_score = average_blurriness(video_path)
-    norm_visual = min(visual_score / 1000, 1.0)
-    # print(f"Blurriness score: {(norm_visual*10):.2f}")
-    # print("Extracting and analyzing audio...")
-    audio_path = extract_audio(video_path)
+        # Safely calculate audio score
+        if request_context.transcribedCount > 0:
+            audio_score = (request_context.clear_audio - request_context.unclear_audio) / request_context.transcribedCount
+        else:
+            audio_score = 0
+        # print(f"Audio RMS score: {(audio_score*10):.5f}")
 
-    audio_score = (clear_audio-unclear_audio)/ transcribedCount
-    # print(f"Audio RMS score: {(audio_score*10):.5f}")
+        # Clamp all scores to [0, 1] to prevent negative scores
+        norm_audio = min(max(audio_score, 0), 1.0)
+        script_raw = rate_script()
+        norm_script = min(max(script_raw, 0), 1.0)
+        
+        # Weighted average
+        final_score = 0.2 * norm_visual + 0.4 * norm_audio + .4 * norm_script
+        # print(f"\nFinal Content Quality Score (0–10): {(final_score*10):.2f}")
 
-    norm_audio = min(audio_score, 1.0)
-    script_score = min(rate_script(), 1.0)
-    # Weighted average
-    final_score = 0.2 * norm_visual + 0.4 * norm_audio + .4 * script_score
-    # print(f"\nFinal Content Quality Score (0–10): {(final_score*10):.2f}")
-
-    # Cleanup
-    if os.path.exists(audio_path):
-        os.remove(audio_path)
-    if(os.path.exists(video_path)):
-        os.remove(video_path)
-    temp_aiComment = aiComment
-    transcript = ""
-    aiComment = ""
-    unclear_audio = 0
-    clear_audio = 0
-    transcribedCount = 0
-    return f'''
-    <p>Visual Score: {(norm_visual*10):.2f}</p>
-    <p>Audio Score: {(audio_score*10):.2f}</p>
-    <p>Script Score: {(script_score*10):.2f}</p>
-    <p>AI Comment: {temp_aiComment}</p>
-    <p>Final Score: {(final_score*10):.2f}</p>
-    '''
+        temp_aiComment = request_context.aiComment
+        return f'''
+        <p>Visual Score: {(norm_visual*10):.2f}</p>
+        <p>Audio Score: {(norm_audio*10):.2f}</p>
+        <p>Script Score: {(norm_script*10):.2f}</p>
+        <p>AI Comment: {temp_aiComment}</p>
+        <p>Final Score: {(final_score*10):.2f}</p>
+        '''
+    
+    except Exception as e:
+        print(f"Error in rate_video: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f'''
+        <p>Error: {str(e)}</p>
+        <p>Final Score: -1</p>
+        '''
+    
+    finally:
+        # Cleanup on success or error
+        if os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+            except Exception as e:
+                print(f"Failed to delete audio file {audio_path}: {e}")
+        
+        if os.path.exists(video_path):
+            try:
+                os.remove(video_path)
+            except Exception as e:
+                print(f"Failed to delete video file {video_path}: {e}")
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -252,30 +287,57 @@ def upload_video():
     </html>
     '''
 
-@app.route("/api/rate", methods=["POST"])
+@app.route("/api/rate", methods=["POST", "OPTIONS"])
 def api_rate():
     """
     POST /api/rate
     FormData:
       video: file
+    Returns:
+      {
+        "success": bool,
+        "result": html_string,
+        "error": error_message (if success=false)
+      }
     """
-    if "video" not in request.files:
-        return jsonify({"error": "No video file uploaded"}), 400
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+    
+    try:
+        if "video" not in request.files:
+            return jsonify({"success": False, "error": "No video file uploaded"}), 400
 
-    video = request.files["video"]
+        video = request.files["video"]
+        
+        if video.filename == '':
+            return jsonify({"success": False, "error": "No file selected"}), 400
+        
+        if not allowed_file(video.filename):
+            return jsonify({"success": False, "error": "Invalid file type. Please upload a video file."}), 400
 
-    filename = os.path.join(UPLOAD_FOLDER, video.filename)
-    video.save(filename)
-    result = rate_video(filename)
-
-    return jsonify({"result": result})
-@app.route('/api_transcript', methods=['GET'])
+        filename = os.path.join(UPLOAD_FOLDER, video.filename)
+        video.save(filename)
+        
+        print(f"Processing video: {filename}")
+        result = rate_video(filename)
+        
+        return jsonify({"success": True, "result": result})
+    
+    except Exception as e:
+        print(f"Error in /api/rate: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+@app.route('/api_transcript', methods=['GET', 'OPTIONS'])
 def api_transcript():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+    
     file_path = 'transcription.txt'
     try:
         return send_file(file_path, as_attachment=True)
     except FileNotFoundError:
-        return {"error": "File not found"}, 404
+        return jsonify({"error": "File not found"}), 404
 
 @app.route("/api/status")
 def root():
