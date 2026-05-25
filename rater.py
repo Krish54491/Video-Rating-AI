@@ -60,7 +60,7 @@ def average_blurriness(video_path):
 
 def extract_audio(video_path, audio_path):
     video = mp.VideoFileClip(video_path)
-    video.audio.write_audiofile(audio_path, verbose=False, logger=None)
+    video.audio.write_audiofile(audio_path)
 
     r = sr.Recognizer()
     with sr.AudioFile(audio_path) as source:
